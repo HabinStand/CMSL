@@ -6,10 +6,38 @@ import plotly.express as px
 import plotly.graph_objects as go
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.cluster import KMeans
-from textblob import TextBlob
 import re
 from collections import Counter
 import json
+import ssl
+import nltk
+
+# Fix SSL and download NLTK data for TextBlob (required for Streamlit Cloud)
+@st.cache_resource
+def download_nltk_data():
+    """Download required NLTK data for TextBlob sentiment analysis"""
+    try:
+        # Bypass SSL certificate verification if needed
+        try:
+            _create_unverified_https_context = ssl._create_unverified_context
+        except AttributeError:
+            pass
+        else:
+            ssl._create_default_https_context = _create_unverified_https_context
+        
+        # Download required NLTK data
+        nltk.download('brown', quiet=True)
+        nltk.download('punkt', quiet=True)
+        return True
+    except Exception as e:
+        st.warning(f"Could not download NLTK data: {e}")
+        return False
+
+# Download NLTK data before importing TextBlob
+download_nltk_data()
+
+# Now import TextBlob
+from textblob import TextBlob
 
 # Page configuration
 st.set_page_config(
