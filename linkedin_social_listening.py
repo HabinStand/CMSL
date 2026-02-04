@@ -237,6 +237,25 @@ def main():
         )
         if uploaded_file:
             df = pd.read_csv(uploaded_file)
+            
+            # Convert date column to datetime
+            try:
+                df['date'] = pd.to_datetime(df['date'])
+            except:
+                # If date parsing fails, use current date
+                df['date'] = pd.to_datetime('today')
+            
+            # Ensure numeric columns are numeric
+            for col in ['likes', 'comments', 'shares']:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
+            
+            # Add missing columns if needed
+            if 'title' not in df.columns:
+                df['title'] = ''
+            if 'url' not in df.columns:
+                df['url'] = 'https://linkedin.com'
+            
             st.sidebar.success("✅ Data uploaded")
         else:
             st.info("👆 Please upload a CSV file or select Demo Data")
@@ -261,23 +280,47 @@ def main():
     sentiments = []
     sentiment_scores = []
     for text in df['text']:
-        sentiment, score = analyze_sentiment(text)
-        sentiments.append(sentiment)
-        sentiment_scores.append(score)
+        try:
+            # Ensure text is a string and not empty
+            text_str = str(text).strip()
+            if len(text_str) > 0:
+                sentiment, score = analyze_sentiment(text_str)
+                sentiments.append(sentiment)
+                sentiment_scores.append(score)
+            else:
+                sentiments.append('Neutral')
+                sentiment_scores.append(0.0)
+        except Exception as e:
+            # If sentiment analysis fails, default to neutral
+            sentiments.append('Neutral')
+            sentiment_scores.append(0.0)
     
     df['sentiment'] = sentiments
     df['sentiment_score'] = sentiment_scores
     
     # Clustering
     n_clusters = st.sidebar.slider("Number of topic clusters", 2, 5, 3)
-    clusters, cluster_keywords = cluster_topics(df['text'].tolist(), n_clusters)
-    df['cluster'] = clusters
     
-    # Assign cluster names based on keywords
-    cluster_names = {}
-    for i, keywords in cluster_keywords.items():
-        cluster_names[i] = f"Topic {i+1}: {', '.join(keywords[:3])}"
-    df['cluster_name'] = df['cluster'].map(cluster_names)
+    # Ensure we have enough posts for clustering
+    if len(df) < n_clusters:
+        n_clusters = max(2, len(df) - 1)
+        st.sidebar.warning(f"⚠️ Adjusted clusters to {n_clusters} (not enough posts)")
+    
+    try:
+        clusters, cluster_keywords = cluster_topics(df['text'].tolist(), n_clusters)
+        df['cluster'] = clusters
+        
+        # Assign cluster names based on keywords
+        cluster_names = {}
+        for i, keywords in cluster_keywords.items():
+            cluster_names[i] = f"Topic {i+1}: {', '.join(keywords[:3])}"
+        df['cluster_name'] = df['cluster'].map(cluster_names)
+    except Exception as e:
+        # If clustering fails, create a single cluster
+        st.sidebar.error(f"⚠️ Clustering failed, using single group")
+        df['cluster'] = 0
+        df['cluster_name'] = 'All Posts'
+        n_clusters = 1
     
     # Display metrics
     st.header("📊 Overview Metrics")
@@ -302,7 +345,16 @@ def main():
     
     for idx, row in top_posts.iterrows():
         with st.expander(f"🏆 {row['author']} - {row['title']} (Engagement: {row['engagement_score']:.0f})"):
-            st.write(f"**Posted:** {row['date'].strftime('%Y-%m-%d %H:%M')}")
+            # Handle date display safely
+            try:
+                if isinstance(row['date'], str):
+                    date_str = row['date']
+                else:
+                    date_str = row['date'].strftime('%Y-%m-%d %H:%M')
+            except:
+                date_str = str(row['date'])
+            
+            st.write(f"**Posted:** {date_str}")
             st.write(f"**Sentiment:** {row['sentiment']}")
             st.write(f"**Estimated Reach:** {row['reach_estimate']:,.0f}")
             st.write(f"**Text:** {row['text']}")
